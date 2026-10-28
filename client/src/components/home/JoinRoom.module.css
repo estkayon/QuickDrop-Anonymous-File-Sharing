@@ -33,6 +33,15 @@
   line-height: 1.6;
 }
 
+.error {
+  font-size: 13px;
+  color: #ff4d4d;
+  background: rgba(255, 77, 77, 0.08);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+
 .form {
   display: flex;
   flex-direction: column;

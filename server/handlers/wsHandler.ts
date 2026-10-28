@@ -1,15 +1,7 @@
-import {
-  addUser,
-  removeUser,
-  getRoomUsers,
-  getUserSocket,
-  broadcastToRoom,
-  getRoom,
-  verifyRoomPassword,
-  isRoomFull,
-} from "../services/roomService.ts";
-import { generateUserId } from "../utils.ts";
-import type { SignalMessage } from "../types.ts";
+import { RoomService } from "../services/roomService.ts";
+import { verifyPassword } from "../utils.ts";
+
+const roomService = RoomService.getInstance();
 
 export function handleWebSocket(req: Request): Response {
   const url = new URL(req.url);
@@ -20,102 +12,99 @@ export function handleWebSocket(req: Request): Response {
     return new Response("Missing room or password", { status: 400 });
   }
 
+  const room = roomService.getRoom(roomId);
+  if (!room) {
+    return new Response("Room not found", { status: 404 });
+  }
+
+  if (roomService.isRoomFull(roomId)) {
+    return new Response("Room is full", { status: 403 });
+  }
+
   const { socket, response } = Deno.upgradeWebSocket(req);
 
-  const userId = generateUserId();
+  let userId: string | null = null;
 
   socket.addEventListener("open", async () => {
-    const room = getRoom(roomId);
-    if (!room) {
-      socket.send(JSON.stringify({ type: "error", payload: "Room not found" }));
-      socket.close();
-      return;
-    }
-
-    if (isRoomFull(roomId)) {
-      socket.send(JSON.stringify({ type: "error", payload: "Room is full" }));
-      socket.close();
-      return;
-    }
-
-    const valid = await verifyRoomPassword(roomId, password);
+    const valid = await verifyPassword(password, room.passwordHash);
     if (!valid) {
-      socket.send(JSON.stringify({ type: "error", payload: "Wrong password" }));
+      socket.send(JSON.stringify({ type: "error", payload: "Invalid password" }));
       socket.close();
       return;
     }
 
-    const added = addUser(roomId, userId, socket);
-    if (!added) {
-      socket.send(JSON.stringify({ type: "error", payload: "Could not join room" }));
+    userId = roomService.addUser(roomId, socket);
+    if (!userId) {
+      socket.send(JSON.stringify({ type: "error", payload: "Failed to join room" }));
       socket.close();
       return;
     }
 
-    const existingUsers = getRoomUsers(roomId).filter((id) => id !== userId);
+    const peers = roomService.getRoomUsers(roomId).filter((id) => id !== userId);
+
+    // tell the new user their ID and existing peers
     socket.send(
       JSON.stringify({
         type: "joined",
-        payload: { userId, peers: existingUsers },
-      }),
+        payload: { userId, peers },
+      })
     );
 
-    broadcastToRoom(
-      roomId,
-      JSON.stringify({ type: "peer-joined", payload: { userId } }),
-      userId,
-    );
-
-    console.log(`${userId} joined ${roomId} (${getRoomUsers(roomId).length} users)`);
+    // tell existing peers about the new user
+    roomService.broadcastToRoom(roomId, {
+      type: "peer-joined",
+      payload: { userId },
+    }, userId);
   });
 
   socket.addEventListener("message", (event: MessageEvent) => {
-    let msg: SignalMessage;
-    try {
-      msg = JSON.parse(String(event.data));
-    } catch {
-      return;
-    }
+    if (!userId) return;
 
-    if (msg.type === "offer" || msg.type === "answer" || msg.type === "ice-candidate") {
-      if (!msg.to) return;
+    const data = JSON.parse(String(event.data));
 
-      const targetWs = getUserSocket(roomId, msg.to);
-      if (targetWs && targetWs.readyState === WebSocket.OPEN) {
-        targetWs.send(
-          JSON.stringify({
-            type: msg.type,
-            from: userId,
-            payload: msg.payload,
-          }),
-        );
+    switch (data.type) {
+      case "offer":
+      case "answer":
+      case "ice-candidate": {
+        const targetSocket = roomService.getUserSocket(roomId, data.to);
+        if (targetSocket) {
+          targetSocket.send(
+            JSON.stringify({
+              type: data.type,
+              from: userId,
+              payload: data.payload,
+            })
+          );
+        }
+        break;
       }
-    }
 
-    if (msg.type === "chat") {
-      broadcastToRoom(
-        roomId,
-        JSON.stringify({
+      case "chat": {
+        // broadcast to all peers EXCEPT the sender
+        roomService.broadcastToRoom(roomId, {
           type: "chat",
           from: userId,
-          payload: msg.payload,
-        }),
-        userId,
-      );
+          payload: data.payload,
+        }, userId);
+        break;
+      }
     }
   });
 
   socket.addEventListener("close", () => {
-    removeUser(roomId, userId);
-    broadcastToRoom(
-      roomId,
-      JSON.stringify({ type: "peer-left", payload: { userId } }),
-    );
-    console.log(`${userId} left ${roomId}`);
+    if (userId) {
+      roomService.removeUser(roomId, userId);
+      roomService.broadcastToRoom(roomId, {
+        type: "peer-left",
+        payload: { userId },
+      });
+    }
   });
 
-  socket.addEventListener("error", (e: Event) => {
-    console.error(`WebSocket error for ${userId}:`, e);
+  socket.addEventListener("error", (_event: Event) => {
+    if (userId) {
+      roomService.removeUser(roomId, userId);
+    }
   });
 
   return response;

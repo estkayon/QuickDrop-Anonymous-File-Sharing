@@ -12,8 +12,21 @@
 .left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
+}
+
+.status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.online {
+  background: var(--color-accent);
+  box-shadow: 0 0 6px var(--color-accent-glow);
 }
 
 .roomId {

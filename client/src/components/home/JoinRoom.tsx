@@ -1,22 +1,50 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Modal } from "../ui/Modal";
+import { joinRoom } from "../../lib/api";
+import { useRoomStore } from "../../stores/roomStore";
 import styles from "./JoinRoom.module.css";
 
 interface JoinRoomProps {
   open: boolean;
   onClose: () => void;
+  prefillRoomId?: string;
 }
 
-export function JoinRoom({ open, onClose }: JoinRoomProps) {
+export function JoinRoom({ open, onClose, prefillRoomId = "" }: JoinRoomProps) {
   const [roomId, setRoomId] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+  const setRoom = useRoomStore((s) => s.setRoom);
 
-  const handleJoin = () => {
+  useEffect(() => {
+    if (open) {
+      setRoomId(prefillRoomId);
+      setPassword("");
+      setError("");
+    }
+  }, [open, prefillRoomId]);
+
+  const handleJoin = async () => {
     if (!roomId.trim() || !password.trim()) return;
-    console.log("Join room:", { roomId, password });
-    onClose();
+
+    setLoading(true);
+    setError("");
+
+    try {
+      await joinRoom(roomId.trim(), password);
+      setRoom(roomId.trim(), password);
+      onClose();
+      navigate(`/room/${roomId.trim()}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to join room");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -27,6 +55,8 @@ export function JoinRoom({ open, onClose }: JoinRoomProps) {
         <p className={styles.desc}>
           Have a room ID? Enter it with the password to join and start sharing.
         </p>
+
+        {error && <div className={styles.error}>{error}</div>}
 
         <div className={styles.form}>
           <Input
@@ -50,9 +80,9 @@ export function JoinRoom({ open, onClose }: JoinRoomProps) {
           <Button
             variant="primary"
             onClick={handleJoin}
-            disabled={!roomId.trim() || !password.trim()}
+            disabled={!roomId.trim() || !password.trim() || loading}
           >
-            Join Room
+            {loading ? "Joining..." : "Join Room"}
           </Button>
         </div>
       </div>

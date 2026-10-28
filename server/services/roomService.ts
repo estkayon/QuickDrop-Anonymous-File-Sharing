@@ -1,145 +1,126 @@
-import type { RoomData, RoomInfo } from "../types.ts";
-import { generateRoomId, hashPassword, verifyPassword } from "../utils.ts";
+import { generateRoomId, generateUserId } from "../utils.ts";
+import type { RoomData } from "../types.ts";
 
-const MAX_USERS = 4;
-const EMPTY_ROOM_TTL = 20_000; // 20 seconds
+export class RoomService {
+  private static instance: RoomService;
+  private rooms = new Map<string, RoomData>();
+  private cleanupTimers = new Map<string, number>();
 
-const rooms = new Map<string, RoomData>();
-const cleanupTimers = new Map<string, number>();
-
-export function getRoomInfo(room: RoomData): RoomInfo {
-  return {
-    id: room.id,
-    isPublic: room.isPublic,
-    userCount: room.users.size,
-    maxUsers: MAX_USERS,
-    createdAt: room.createdAt,
-  };
-}
-
-export async function createRoom(
-  password: string,
-  isPublic: boolean,
-): Promise<RoomData> {
-  const id = generateRoomId();
-  const passwordHash = await hashPassword(password);
-
-  const room: RoomData = {
-    id,
-    passwordHash,
-    isPublic,
-    createdAt: Date.now(),
-    users: new Map(),
-  };
-
-  rooms.set(id, room);
-  scheduleCleanup(id);
-
-  return room;
-}
-
-export function getRoom(roomId: string): RoomData | undefined {
-  return rooms.get(roomId);
-}
-
-export async function verifyRoomPassword(
-  roomId: string,
-  password: string,
-): Promise<boolean> {
-  const room = rooms.get(roomId);
-  if (!room) return false;
-  return verifyPassword(password, room.passwordHash);
-}
-
-export function isRoomFull(roomId: string): boolean {
-  const room = rooms.get(roomId);
-  if (!room) return true;
-  return room.users.size >= MAX_USERS;
-}
-
-export function addUser(roomId: string, userId: string, ws: WebSocket): boolean {
-  const room = rooms.get(roomId);
-  if (!room || room.users.size >= MAX_USERS) return false;
-
-  room.users.set(userId, ws);
-  cancelCleanup(roomId);
-
-  return true;
-}
-
-export function removeUser(roomId: string, userId: string): void {
-  const room = rooms.get(roomId);
-  if (!room) return;
-
-  room.users.delete(userId);
-
-  if (room.users.size === 0) {
-    scheduleCleanup(roomId);
-  }
-}
-
-export function getRoomUsers(roomId: string): string[] {
-  const room = rooms.get(roomId);
-  if (!room) return [];
-  return Array.from(room.users.keys());
-}
-
-export function getUserSocket(
-  roomId: string,
-  userId: string,
-): WebSocket | undefined {
-  const room = rooms.get(roomId);
-  if (!room) return undefined;
-  return room.users.get(userId);
-}
-
-export function broadcastToRoom(
-  roomId: string,
-  message: string,
-  excludeUserId?: string,
-): void {
-  const room = rooms.get(roomId);
-  if (!room) return;
-
-  for (const [userId, ws] of room.users) {
-    if (userId === excludeUserId) continue;
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(message);
+  static getInstance(): RoomService {
+    if (!RoomService.instance) {
+      RoomService.instance = new RoomService();
     }
+    return RoomService.instance;
   }
-}
 
-export function listPublicRooms(): RoomInfo[] {
-  const publicRooms: RoomInfo[] = [];
+  createRoom(passwordHash: string, isPublic: boolean): string {
+    const id = generateRoomId();
+    this.rooms.set(id, {
+      id,
+      passwordHash,
+      isPublic,
+      createdAt: Date.now(),
+      users: new Map(),
+    });
+    this.scheduleCleanup(id);
+    return id;
+  }
 
-  for (const room of rooms.values()) {
-    if (room.isPublic && room.users.size > 0) {
-      publicRooms.push(getRoomInfo(room));
+  getRoom(id: string): RoomData | undefined {
+    return this.rooms.get(id);
+  }
+
+  isRoomFull(id: string): boolean {
+    const room = this.rooms.get(id);
+    return room ? room.users.size >= 4 : true;
+  }
+
+  addUser(roomId: string, socket: WebSocket): string | null {
+    const room = this.rooms.get(roomId);
+    if (!room || room.users.size >= 4) return null;
+
+    const userId = generateUserId();
+    room.users.set(userId, socket);
+    this.cancelCleanup(roomId);
+    return userId;
+  }
+
+  removeUser(roomId: string, userId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    room.users.delete(userId);
+
+    if (room.users.size === 0) {
+      this.scheduleCleanup(roomId);
     }
   }
 
-  return publicRooms.sort((a, b) => b.createdAt - a.createdAt);
-}
+  getRoomUsers(roomId: string): string[] {
+    const room = this.rooms.get(roomId);
+    return room ? Array.from(room.users.keys()) : [];
+  }
 
-function scheduleCleanup(roomId: string): void {
-  cancelCleanup(roomId);
+  getUserSocket(roomId: string, userId: string): WebSocket | undefined {
+    return this.rooms.get(roomId)?.users.get(userId);
+  }
 
-  const timer = setTimeout(() => {
-    const room = rooms.get(roomId);
-    if (room && room.users.size === 0) {
-      rooms.delete(roomId);
-      cleanupTimers.delete(roomId);
-      console.log(`Room ${roomId} destroyed (empty)`);
+  broadcastToRoom(
+    roomId: string,
+    message: Record<string, unknown>,
+    excludeUserId?: string
+  ): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    const payload = JSON.stringify(message);
+
+    for (const [uid, socket] of room.users) {
+      if (uid === excludeUserId) continue;
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(payload);
+      }
     }
-  }, EMPTY_ROOM_TTL);
+  }
 
-  cleanupTimers.set(roomId, timer);
-}
+  listPublicRooms() {
+    const rooms: Array<{
+      id: string;
+      isPublic: boolean;
+      userCount: number;
+      maxUsers: number;
+      createdAt: number;
+    }> = [];
 
-function cancelCleanup(roomId: string): void {
-  const timer = cleanupTimers.get(roomId);
-  if (timer) {
-    clearTimeout(timer);
-    cleanupTimers.delete(roomId);
+    for (const room of this.rooms.values()) {
+      if (room.isPublic) {
+        rooms.push({
+          id: room.id,
+          isPublic: true,
+          userCount: room.users.size,
+          maxUsers: 4,
+          createdAt: room.createdAt,
+        });
+      }
+    }
+
+    return rooms;
+  }
+
+  private scheduleCleanup(roomId: string): void {
+    this.cancelCleanup(roomId);
+    const timer = setTimeout(() => {
+      this.rooms.delete(roomId);
+      this.cleanupTimers.delete(roomId);
+    }, 20_000);
+    this.cleanupTimers.set(roomId, timer);
+  }
+
+  private cancelCleanup(roomId: string): void {
+    const timer = this.cleanupTimers.get(roomId);
+    if (timer) {
+      clearTimeout(timer);
+      this.cleanupTimers.delete(roomId);
+    }
   }
 }

@@ -1,26 +1,35 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useChatStore } from "../../stores/chatStore";
 import styles from "./ChatPanel.module.css";
 
-interface Message {
-  id: string;
-  sender: string;
-  text: string;
-  time: string;
-  isMe: boolean;
+interface ChatPanelProps {
+  sendChat: (text: string) => void;
 }
 
-const mockMessages: Message[] = [
-  { id: "1", sender: "User-a3f", text: "Hey, uploading the files now", time: "10:23 PM", isMe: false },
-  { id: "2", sender: "You", text: "Got it, standing by", time: "10:23 PM", isMe: true },
-  { id: "3", sender: "User-a3f", text: "Sent! Check the files tab", time: "10:24 PM", isMe: false },
-];
-
-export function ChatPanel() {
+export function ChatPanel({ sendChat }: ChatPanelProps) {
   const [message, setMessage] = useState("");
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const messages = useChatStore((s) => s.messages);
+  const addMessage = useChatStore((s) => s.addMessage);
+
+  useEffect(() => {
+    if (messagesRef.current) {
+      messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   const handleSend = () => {
     if (!message.trim()) return;
-    console.log("Send:", message);
+
+    addMessage({
+      id: crypto.randomUUID(),
+      sender: "You",
+      text: message.trim(),
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      isMe: true,
+    });
+
+    sendChat(message.trim());
     setMessage("");
   };
 
@@ -33,14 +42,19 @@ export function ChatPanel() {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.messages}>
-        {mockMessages.map((msg) => (
+      <div className={styles.messages} ref={messagesRef}>
+        {messages.length === 0 && (
+          <div className={styles.empty}>No messages yet. Say something!</div>
+        )}
+        {messages.map((msg) => (
           <div
             key={msg.id}
             className={`${styles.message} ${msg.isMe ? styles.me : ""}`}
           >
             <div className={styles.msgHeader}>
-              <span className={styles.sender}>{msg.sender}</span>
+              <span className={styles.sender}>
+                {msg.isMe ? "You" : msg.sender}
+              </span>
               <span className={styles.time}>{msg.time}</span>
             </div>
             <p className={styles.text}>{msg.text}</p>

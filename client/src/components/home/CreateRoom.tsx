@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Modal } from "../ui/Modal";
+import { createRoom } from "../../lib/api";
+import { useRoomStore } from "../../stores/roomStore";
 import styles from "./CreateRoom.module.css";
 
 interface CreateRoomProps {
@@ -12,11 +15,27 @@ interface CreateRoomProps {
 export function CreateRoom({ open, onClose }: CreateRoomProps) {
   const [password, setPassword] = useState("");
   const [isPublic, setIsPublic] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+  const setRoom = useRoomStore((s) => s.setRoom);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!password.trim()) return;
-    console.log("Create room:", { password, isPublic });
-    onClose();
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await createRoom(password, isPublic);
+      setRoom(res.roomId, password);
+      onClose();
+      navigate(`/room/${res.roomId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create room");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -28,6 +47,8 @@ export function CreateRoom({ open, onClose }: CreateRoomProps) {
           Start a private room for file sharing and real-time chat. Share the
           room link to invite others.
         </p>
+
+        {error && <div className={styles.error}>{error}</div>}
 
         <div className={styles.form}>
           <Input
@@ -49,8 +70,12 @@ export function CreateRoom({ open, onClose }: CreateRoomProps) {
             <span>List as public room (visible in browse)</span>
           </label>
 
-          <Button variant="accent" onClick={handleCreate} disabled={!password.trim()}>
-            Create Room
+          <Button
+            variant="accent"
+            onClick={handleCreate}
+            disabled={!password.trim() || loading}
+          >
+            {loading ? "Creating..." : "Create Room"}
           </Button>
         </div>
       </div>
