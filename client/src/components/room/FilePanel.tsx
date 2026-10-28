@@ -1,92 +1,143 @@
-import { useState, useRef } from "react";
+import { useRef, useCallback } from "react";
+import { useFileStore } from "../../stores/fileStore";
+import type { FileEntry } from "../../stores/fileStore";
 import styles from "./FilePanel.module.css";
 
-interface SharedFile {
-  id: string;
-  name: string;
-  size: string;
-  sender: string;
-  progress: number;
+interface FilePanelProps {
+  sendFile: ((file: File) => Promise<string | null>) | null;
 }
 
-const mockFiles: SharedFile[] = [
-  { id: "1", name: "design-mockup-v3.fig", size: "24.5 MB", sender: "User-a3f", progress: 100 },
-  { id: "2", name: "api-docs.pdf", size: "3.2 MB", sender: "You", progress: 100 },
-  { id: "3", name: "demo-recording.mp4", size: "148 MB", sender: "User-a3f", progress: 67 },
-];
-
-export function FilePanel() {
-  const [dragOver, setDragOver] = useState(false);
+export function FilePanel({ sendFile }: FilePanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const files = useFileStore((s) => s.files);
+  const addFile = useFileStore((s) => s.addFile);
+  const updateProgress = useFileStore((s) => s.updateProgress);
+  const setStatus = useFileStore((s) => s.setStatus);
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleFiles = useCallback(
+    async (fileList: FileList) => {
+      if (!sendFile) return;
+
+      for (const file of Array.from(fileList)) {
+        if (file.size > 1024 * 1024 * 1024) {
+          alert("File too large. Max 1GB.");
+          continue;
+        }
+
+        const tempId = crypto.randomUUID();
+        addFile({
+          id: tempId,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          progress: 0,
+          status: "sending",
+          sender: "You",
+          file,
+        });
+
+        const transferId = await sendFile(file);
+        if (transferId) {
+          // update the temp entry with real transfer ID
+          updateProgress(tempId, 1);
+          setStatus(tempId, "done");
+        } else {
+          setStatus(tempId, "error");
+        }
+      }
+    },
+    [sendFile, addFile, updateProgress, setStatus]
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer.files.length > 0) {
+        handleFiles(e.dataTransfer.files);
+      }
+    },
+    [handleFiles]
+  );
+
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    console.log("Dropped:", files);
   };
 
-  const handleSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    console.log("Selected:", files);
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  };
+
+  const downloadFile = (entry: FileEntry) => {
+    if (!entry.file) return;
+    const url = URL.createObjectURL(entry.file);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = entry.name;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
     <div className={styles.panel}>
       <div
-        className={`${styles.dropzone} ${dragOver ? styles.active : ""}`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
+        className={styles.dropzone}
         onDrop={handleDrop}
+        onDragOver={handleDragOver}
         onClick={() => inputRef.current?.click()}
       >
+        <div className={styles.dropIcon}>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+          </svg>
+        </div>
+        <p className={styles.dropText}>
+          Drop files here or <span className={styles.browse}>browse</span>
+        </p>
+        <p className={styles.dropHint}>Max 1GB per file · P2P encrypted</p>
         <input
           ref={inputRef}
           type="file"
           multiple
-          className={styles.hiddenInput}
-          onChange={handleSelect}
+          className={styles.fileInput}
+          onChange={(e) => e.target.files && handleFiles(e.target.files)}
         />
-        <div className={styles.dropIcon}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" />
-            <line x1="12" y1="3" x2="12" y2="15" />
-          </svg>
-        </div>
-        <p className={styles.dropText}>
-          {dragOver ? "Drop files here" : "Drag files here or click to browse"}
-        </p>
-        <p className={styles.dropHint}>Max 1GB per file</p>
       </div>
 
-      {mockFiles.length > 0 && (
+      {files.length > 0 && (
         <div className={styles.fileList}>
-          {mockFiles.map((file) => (
-            <div key={file.id} className={styles.file}>
-              <div className={styles.fileIcon}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-              </div>
+          {files.map((entry) => (
+            <div key={entry.id} className={styles.fileItem}>
               <div className={styles.fileInfo}>
-                <span className={styles.fileName}>{file.name}</span>
+                <span className={styles.fileName}>{entry.name}</span>
                 <span className={styles.fileMeta}>
-                  {file.size} · {file.sender}
+                  {formatSize(entry.size)} · {entry.sender}
+                  {entry.status === "done" && " · ✓"}
+                  {entry.status === "sending" && " · Sending..."}
+                  {entry.status === "receiving" && " · Receiving..."}
+                  {entry.status === "error" && " · Failed"}
                 </span>
-                {file.progress < 100 && (
-                  <div className={styles.progressTrack}>
-                    <div
-                      className={styles.progressBar}
-                      style={{ width: `${file.progress}%` }}
-                    />
-                  </div>
-                )}
               </div>
-              <span className={styles.fileStatus}>
-                {file.progress === 100 ? "✓" : `${file.progress}%`}
-              </span>
+
+              {entry.status === "done" && entry.sender !== "You" && entry.file && (
+                <button
+                  className={styles.downloadBtn}
+                  onClick={() => downloadFile(entry)}
+                >
+                  Save
+                </button>
+              )}
+
+              {(entry.status === "sending" || entry.status === "receiving") && (
+                <div className={styles.progressBar}>
+                  <div
+                    className={styles.progressFill}
+                    style={{ width: `${entry.progress * 100}%` }}
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>
