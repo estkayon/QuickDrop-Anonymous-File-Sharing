@@ -1,0 +1,85 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  gap: 12px;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.roomId {
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  letter-spacing: 0.3px;
+  color: var(--text-primary);
+}
+
+.copyBtn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-subtle);
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.copyBtn:hover {
+  background: rgba(59, 91, 255, 0.18);
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.users {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dots {
+  display: flex;
+  gap: 4px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-hover);
+}
+
+.dotActive {
+  background: var(--color-accent);
+  box-shadow: 0 0 6px var(--color-accent-glow);
+}
+
+.userCount {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .header {
+    padding: 10px 14px;
+  }
+
+  .dots {
+    display: none;
+  }
+}
