@@ -1,4 +1,10 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+function getApiBase(): string {
+  // If env var set, use it; otherwise dynamically use current hostname
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  return `http://${window.location.hostname}:8080`;
+}
 
 interface CreateRoomResponse {
   roomId: string;
@@ -23,7 +29,7 @@ interface RoomInfo {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${getApiBase()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -59,6 +65,7 @@ export async function listPublicRooms() {
 }
 
 export function getWsUrl(roomId: string, password: string): string {
-  const wsBase = API_URL.replace(/^http/, "ws");
+  const base = getApiBase();
+  const wsBase = base.replace(/^http/, "ws");
   return `${wsBase}/ws?room=${encodeURIComponent(roomId)}&pwd=${encodeURIComponent(password)}`;
 }

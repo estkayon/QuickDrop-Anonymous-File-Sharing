@@ -6,7 +6,7 @@ import { useChatStore } from "../stores/chatStore";
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const intentionalClose = useRef(false);
-  const { roomId, password, setUserId, setPeers, addPeer, removePeer, setConnected, setError } =
+  const { roomId, userId: savedUserId, password, setUserId, setPeers, addPeer, removePeer, setConnected, setError } =
     useRoomStore();
   const addMessage = useChatStore((s) => s.addMessage);
 
@@ -14,7 +14,14 @@ export function useWebSocket() {
     if (!roomId || !password) return;
 
     intentionalClose.current = false;
-    const ws = new WebSocket(getWsUrl(roomId, password));
+
+    // Pass saved userId for reconnect
+    let wsUrl = getWsUrl(roomId, password);
+    if (savedUserId) {
+      wsUrl += `&userId=${encodeURIComponent(savedUserId)}`;
+    }
+
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.addEventListener("open", () => {
@@ -41,7 +48,7 @@ export function useWebSocket() {
 
         case "chat":
           addMessage({
-            id: crypto.randomUUID(),
+            id: Math.random().toString(36).slice(2) + Date.now().toString(36),
             sender: msg.from,
             text: msg.payload.text,
             time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -57,16 +64,21 @@ export function useWebSocket() {
     });
 
     ws.addEventListener("close", () => {
-      // only show error if we didn't close intentionally (cleanup/unmount)
       if (!intentionalClose.current) {
         setConnected(false);
-        setError("Connection lost");
+        // Auto reconnect after 2 seconds
+        setTimeout(() => {
+          const state = useRoomStore.getState();
+          if (state.roomId && state.password && !intentionalClose.current) {
+            // Re-trigger the effect by resetting connected
+            setConnected(false);
+          }
+        }, 2000);
       }
     });
 
     ws.addEventListener("error", () => {
       if (!intentionalClose.current) {
-        setError("Connection failed");
         setConnected(false);
       }
     });

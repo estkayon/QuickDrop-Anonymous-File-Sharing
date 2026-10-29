@@ -7,6 +7,7 @@ export function handleWebSocket(req: Request): Response {
   const url = new URL(req.url);
   const roomId = url.searchParams.get("room");
   const password = url.searchParams.get("pwd");
+  const reconnectUserId = url.searchParams.get("userId");
 
   if (!roomId || !password) {
     return new Response("Missing room or password", { status: 400 });
@@ -17,7 +18,9 @@ export function handleWebSocket(req: Request): Response {
     return new Response("Room not found", { status: 404 });
   }
 
-  if (roomService.isRoomFull(roomId)) {
+  // Don't check full if this is a reconnect (user already has a slot)
+  const isReconnect = reconnectUserId && room.users.has(reconnectUserId);
+  if (!isReconnect && roomService.isRoomFull(roomId)) {
     return new Response("Room is full", { status: 403 });
   }
 
@@ -33,28 +36,43 @@ export function handleWebSocket(req: Request): Response {
       return;
     }
 
-    userId = roomService.addUser(roomId, socket);
-    if (!userId) {
-      socket.send(JSON.stringify({ type: "error", payload: "Failed to join room" }));
-      socket.close();
-      return;
-    }
+    if (isReconnect && reconnectUserId) {
+      // Reconnect: replace old socket with new one
+      userId = reconnectUserId;
+      const oldSocket = room.users.get(userId!);
+      room.users.set(userId!, socket);
 
-    const peers = roomService.getRoomUsers(roomId).filter((id) => id !== userId);
+      // Close old socket if still open (don't trigger remove)
+      if (oldSocket && oldSocket.readyState === WebSocket.OPEN) {
+        try { oldSocket.close(); } catch {}
+      }
 
-    // tell the new user their ID and existing peers
-    socket.send(
-      JSON.stringify({
+      const peers = roomService.getRoomUsers(roomId).filter((id) => id !== userId);
+      socket.send(JSON.stringify({
         type: "joined",
         payload: { userId, peers },
-      })
-    );
+      }));
+      // No peer-joined broadcast — they already know this user
+    } else {
+      // New user
+      userId = roomService.addUser(roomId, socket);
+      if (!userId) {
+        socket.send(JSON.stringify({ type: "error", payload: "Failed to join room" }));
+        socket.close();
+        return;
+      }
 
-    // tell existing peers about the new user
-    roomService.broadcastToRoom(roomId, {
-      type: "peer-joined",
-      payload: { userId },
-    }, userId);
+      const peers = roomService.getRoomUsers(roomId).filter((id) => id !== userId);
+      socket.send(JSON.stringify({
+        type: "joined",
+        payload: { userId, peers },
+      }));
+
+      roomService.broadcastToRoom(roomId, {
+        type: "peer-joined",
+        payload: { userId },
+      }, userId);
+    }
   });
 
   socket.addEventListener("message", (event: MessageEvent) => {
@@ -80,7 +98,6 @@ export function handleWebSocket(req: Request): Response {
       }
 
       case "chat": {
-        // broadcast to all peers EXCEPT the sender
         roomService.broadcastToRoom(roomId, {
           type: "chat",
           from: userId,
@@ -93,17 +110,30 @@ export function handleWebSocket(req: Request): Response {
 
   socket.addEventListener("close", () => {
     if (userId) {
-      roomService.removeUser(roomId, userId);
-      roomService.broadcastToRoom(roomId, {
-        type: "peer-left",
-        payload: { userId },
-      });
+      const currentSocket = roomService.getUserSocket(roomId, userId);
+      // Only remove if this socket is still the active one
+      if (currentSocket === socket) {
+        roomService.removeUser(roomId, userId);
+        roomService.broadcastToRoom(roomId, {
+          type: "peer-left",
+          payload: { userId },
+        });
+      }
+      userId = null;
     }
   });
 
   socket.addEventListener("error", (_event: Event) => {
     if (userId) {
-      roomService.removeUser(roomId, userId);
+      const currentSocket = roomService.getUserSocket(roomId, userId);
+      if (currentSocket === socket) {
+        roomService.removeUser(roomId, userId);
+        roomService.broadcastToRoom(roomId, {
+          type: "peer-left",
+          payload: { userId },
+        });
+      }
+      userId = null;
     }
   });
 

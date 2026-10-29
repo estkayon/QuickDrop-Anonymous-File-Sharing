@@ -1,8 +1,25 @@
 import { handleCreateRoom, handleJoinRoom, handleListRooms } from "./handlers/roomHandler.ts";
 import { handleWebSocket } from "./handlers/wsHandler.ts";
-import { corsHeaders } from "./utils.ts";
 
 const PORT = 8080;
+
+const CORS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+function withCors(res: Response): Response {
+  const headers = new Headers(res.headers);
+  for (const [k, v] of Object.entries(CORS)) {
+    headers.set(k, v);
+  }
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
 
 function getClientIp(req: Request): string {
   return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
@@ -10,17 +27,17 @@ function getClientIp(req: Request): string {
     || "unknown";
 }
 
-Deno.serve({ port: PORT, hostname: "0.0.0.0" }, (req: Request): Response | Promise<Response> => {
+Deno.serve({ port: PORT, hostname: "0.0.0.0" }, async (req: Request): Promise<Response> => {
   const url = new URL(req.url);
   const path = url.pathname;
   const method = req.method;
 
   // CORS preflight
   if (method === "OPTIONS") {
-    return corsHeaders();
+    return new Response(null, { status: 204, headers: CORS });
   }
 
-  // WebSocket upgrade
+  // WebSocket upgrade — no CORS needed for WebSocket
   if (path === "/ws") {
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
       return handleWebSocket(req);
@@ -30,25 +47,28 @@ Deno.serve({ port: PORT, hostname: "0.0.0.0" }, (req: Request): Response | Promi
 
   const ip = getClientIp(req);
 
-  // REST API
+  // REST API — wrap all responses with CORS headers
   if (path === "/api/rooms" && method === "POST") {
-    return handleCreateRoom(req, ip);
+    const res = await handleCreateRoom(req, ip);
+    return withCors(res);
   }
 
   if (path === "/api/rooms/join" && method === "POST") {
-    return handleJoinRoom(req, ip);
+    const res = await handleJoinRoom(req, ip);
+    return withCors(res);
   }
 
   if (path === "/api/rooms" && method === "GET") {
-    return handleListRooms();
+    const res = await handleListRooms();
+    return withCors(res);
   }
 
   // Health check
   if (path === "/health") {
-    return new Response("ok");
+    return withCors(new Response("ok"));
   }
 
-  return new Response("Not Found", { status: 404 });
+  return withCors(new Response("Not Found", { status: 404 }));
 });
 
 console.log(`Signaling server running on :${PORT}`);

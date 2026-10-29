@@ -18,22 +18,53 @@ interface RoomState {
   reset: () => void;
 }
 
-export const useRoomStore = create<RoomState>((set) => ({
-  roomId: null,
-  userId: null,
-  password: null,
+function saveSession(roomId: string, password: string, userId?: string) {
+  try {
+    const existing = sessionStorage.getItem("quickdrop_session");
+    const prev = existing ? JSON.parse(existing) : {};
+    sessionStorage.setItem("quickdrop_session", JSON.stringify({
+      roomId,
+      password,
+      userId: userId || prev.userId || null,
+    }));
+  } catch {}
+}
+
+function clearSession() {
+  try { sessionStorage.removeItem("quickdrop_session"); } catch {}
+}
+
+function loadSession(): { roomId: string; password: string; userId?: string } | null {
+  try {
+    const raw = sessionStorage.getItem("quickdrop_session");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+const saved = loadSession();
+
+export const useRoomStore = create<RoomState>((set, get) => ({
+  roomId: saved?.roomId ?? null,
+  userId: saved?.userId ?? null,
+  password: saved?.password ?? null,
   peers: [],
   connected: false,
   error: null,
 
-  setRoom: (roomId, password) => set({ roomId, password, error: null }),
-  setUserId: (userId) => set({ userId }),
+  setRoom: (roomId, password) => {
+    saveSession(roomId, password);
+    set({ roomId, password, error: null });
+  },
+  setUserId: (userId) => {
+    const { roomId, password } = get();
+    if (roomId && password) saveSession(roomId, password, userId);
+    set({ userId });
+  },
   setPeers: (peers) => set({ peers }),
   addPeer: (peerId) =>
     set((state) => ({
-      peers: state.peers.includes(peerId)
-        ? state.peers
-        : [...state.peers, peerId],
+      peers: state.peers.includes(peerId) ? state.peers : [...state.peers, peerId],
     })),
   removePeer: (peerId) =>
     set((state) => ({
@@ -41,13 +72,8 @@ export const useRoomStore = create<RoomState>((set) => ({
     })),
   setConnected: (connected) => set({ connected }),
   setError: (error) => set({ error }),
-  reset: () =>
-    set({
-      roomId: null,
-      userId: null,
-      password: null,
-      peers: [],
-      connected: false,
-      error: null,
-    }),
+  reset: () => {
+    clearSession();
+    set({ roomId: null, userId: null, password: null, peers: [], connected: false, error: null });
+  },
 }));
