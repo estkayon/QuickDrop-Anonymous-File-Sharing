@@ -10,7 +10,7 @@ function getClientIp(req: Request): string {
     || "unknown";
 }
 
-Deno.serve({ port: PORT }, (req: Request): Response | Promise<Response> => {
+Deno.serve({ port: PORT, hostname: "0.0.0.0" }, (req: Request): Response | Promise<Response> => {
   const url = new URL(req.url);
   const path = url.pathname;
   const method = req.method;

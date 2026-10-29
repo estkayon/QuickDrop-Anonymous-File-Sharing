@@ -1,19 +1,20 @@
-import { useRef, useCallback, useState } from "react";
+import { useRef, useCallback } from "react";
 import { useFileStore } from "../../stores/fileStore";
 import type { FileEntry } from "../../stores/fileStore";
 import styles from "./FilePanel.module.css";
 
 interface FilePanelProps {
   sendFile: ((file: File) => Promise<string | null>) | null;
+  onPreview: (entry: FileEntry | null) => void;
+  activePreviewId: string | null;
 }
 
-export function FilePanel({ sendFile }: FilePanelProps) {
+export function FilePanel({ sendFile, onPreview, activePreviewId }: FilePanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const files = useFileStore((s) => s.files);
   const addFile = useFileStore((s) => s.addFile);
   const updateProgress = useFileStore((s) => s.updateProgress);
   const setStatus = useFileStore((s) => s.setStatus);
-  const [previewFile, setPreviewFile] = useState<FileEntry | null>(null);
 
   const handleFiles = useCallback(
     async (fileList: FileList) => {
@@ -104,6 +105,15 @@ export function FilePanel({ sendFile }: FilePanelProps) {
     return "📎";
   };
 
+  const handlePreviewClick = (entry: FileEntry) => {
+    if (!isPreviewable(entry) || entry.status !== "done") return;
+    if (activePreviewId === entry.id) {
+      onPreview(null);
+    } else {
+      onPreview(entry);
+    }
+  };
+
   return (
     <div className={styles.panel}>
       <div
@@ -113,7 +123,7 @@ export function FilePanel({ sendFile }: FilePanelProps) {
         onClick={() => inputRef.current?.click()}
       >
         <div className={styles.dropIcon}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
           </svg>
         </div>
@@ -133,65 +143,54 @@ export function FilePanel({ sendFile }: FilePanelProps) {
       {files.length > 0 && (
         <div className={styles.fileList}>
           {files.map((entry) => (
-            <div key={entry.id} className={styles.fileItem}>
-              <div
-                className={`${styles.fileRow} ${isPreviewable(entry) && entry.status === "done" ? styles.clickable : ""}`}
-                onClick={() => {
-                  if (isPreviewable(entry) && entry.status === "done") {
-                    setPreviewFile(previewFile?.id === entry.id ? null : entry);
-                  }
-                }}
-              >
-                <span className={styles.fileIcon}>{getFileIcon(entry.type)}</span>
-                <div className={styles.fileInfo}>
-                  <span className={styles.fileName}>{entry.name}</span>
-                  <span className={styles.fileMeta}>
-                    {formatSize(entry.size)} · {entry.sender}
-                    {entry.status === "done" && " · ✓"}
-                    {entry.status === "sending" && " · Sending..."}
-                    {entry.status === "receiving" && " · Receiving..."}
-                    {entry.status === "error" && " · Failed"}
-                  </span>
-                </div>
+            <div
+              key={entry.id}
+              className={`${styles.fileItem} ${activePreviewId === entry.id ? styles.fileItemActive : ""} ${isPreviewable(entry) && entry.status === "done" ? styles.clickable : ""}`}
+              onClick={() => handlePreviewClick(entry)}
+            >
+              <span className={styles.fileIcon}>{getFileIcon(entry.type)}</span>
+              <div className={styles.fileInfo}>
+                <span className={styles.fileName}>{entry.name}</span>
+                <span className={styles.fileMeta}>
+                  {formatSize(entry.size)} · {entry.sender}
+                  {entry.status === "done" && " · ✓"}
+                  {entry.status === "sending" && " · Sending..."}
+                  {entry.status === "receiving" && " · Receiving..."}
+                  {entry.status === "error" && " · Failed"}
+                </span>
+              </div>
 
-                <div className={styles.fileActions}>
-                  {entry.status === "done" && isPreviewable(entry) && (
-                    <button
-                      className={styles.previewBtn}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPreviewFile(previewFile?.id === entry.id ? null : entry);
-                      }}
-                    >
-                      {previewFile?.id === entry.id ? "Close" : "Preview"}
-                    </button>
-                  )}
-                  {entry.status === "done" && entry.file && (
-                    <button
-                      className={styles.downloadBtn}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        downloadFile(entry);
-                      }}
-                    >
-                      Save
-                    </button>
-                  )}
-                </div>
-
-                {(entry.status === "sending" || entry.status === "receiving") && (
-                  <div className={styles.progressBar}>
-                    <div
-                      className={styles.progressFill}
-                      style={{ width: `${entry.progress * 100}%` }}
-                    />
-                  </div>
+              <div className={styles.fileActions}>
+                {entry.status === "done" && isPreviewable(entry) && (
+                  <button
+                    className={styles.previewBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePreviewClick(entry);
+                    }}
+                  >
+                    {activePreviewId === entry.id ? "Close" : "Preview"}
+                  </button>
+                )}
+                {entry.status === "done" && entry.file && (
+                  <button
+                    className={styles.downloadBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      downloadFile(entry);
+                    }}
+                  >
+                    Save
+                  </button>
                 )}
               </div>
 
-              {previewFile?.id === entry.id && entry.file && (
-                <div className={styles.preview}>
-                  <FilePreview file={entry.file} type={entry.type} />
+              {(entry.status === "sending" || entry.status === "receiving") && (
+                <div className={styles.progressBar}>
+                  <div
+                    className={styles.progressFill}
+                    style={{ width: `${entry.progress * 100}%` }}
+                  />
                 </div>
               )}
             </div>
@@ -200,46 +199,4 @@ export function FilePanel({ sendFile }: FilePanelProps) {
       )}
     </div>
   );
-}
-
-function FilePreview({ file, type }: { file: File; type: string }) {
-  const [url] = useState(() => URL.createObjectURL(file));
-  const [textContent, setTextContent] = useState<string | null>(null);
-
-  if (type.startsWith("text/") && textContent === null) {
-    file.text().then((t) => setTextContent(t.slice(0, 5000)));
-  }
-
-  if (type.startsWith("image/")) {
-    return <img src={url} alt={file.name} className={styles.previewImage} />;
-  }
-
-  if (type === "application/pdf") {
-    return (
-      <iframe
-        src={url}
-        title={file.name}
-        className={styles.previewIframe}
-      />
-    );
-  }
-
-  if (type.startsWith("video/")) {
-    return <video src={url} controls className={styles.previewVideo} />;
-  }
-
-  if (type.startsWith("audio/")) {
-    return <audio src={url} controls className={styles.previewAudio} />;
-  }
-
-  if (type.startsWith("text/") && textContent !== null) {
-    return (
-      <pre className={styles.previewText}>
-        {textContent}
-        {textContent.length >= 5000 && "\n\n... (truncated)"}
-      </pre>
-    );
-  }
-
-  return <p className={styles.previewFallback}>Preview not available</p>;
 }

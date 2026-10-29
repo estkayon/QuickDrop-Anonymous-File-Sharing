@@ -13,14 +13,18 @@ export interface FileEntry {
 
 interface FileState {
   files: FileEntry[];
+  unread: number;
   addFile: (entry: FileEntry) => void;
   updateProgress: (id: string, progress: number) => void;
   setStatus: (id: string, status: FileEntry["status"]) => void;
+  incrementUnread: () => void;
+  resetUnread: () => void;
   clear: () => void;
 }
 
 export const useFileStore = create<FileState>((set) => ({
   files: [],
+  unread: 0,
 
   addFile: (entry) =>
     set((state) => ({
@@ -41,5 +45,10 @@ export const useFileStore = create<FileState>((set) => ({
       ),
     })),
 
-  clear: () => set({ files: [] }),
+  incrementUnread: () =>
+    set((state) => ({ unread: state.unread + 1 })),
+
+  resetUnread: () => set({ unread: 0 }),
+
+  clear: () => set({ files: [], unread: 0 }),
 }));

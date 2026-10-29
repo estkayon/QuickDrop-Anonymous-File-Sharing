@@ -11,8 +11,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 40px 20px;
+  gap: 8px;
+  padding: 32px 20px;
   border: 2px dashed var(--border-hover);
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -50,23 +50,24 @@
 .fileList {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   overflow-y: auto;
 }
 
 .fileItem {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  padding: 10px 12px;
+  gap: 10px;
   background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  border: 1px solid transparent;
+  transition: all var(--transition);
 }
 
-.fileRow {
-  display: flex;
-  align-items: center;
-  padding: 12px 14px;
-  gap: 10px;
+.fileItemActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
 }
 
 .clickable {
@@ -77,10 +78,14 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
+.fileItemActive.clickable:hover {
+  background: var(--color-primary-subtle);
+}
+
 .fileIcon {
-  font-size: 20px;
+  font-size: 18px;
   flex-shrink: 0;
-  width: 28px;
+  width: 26px;
   text-align: center;
 }
 
@@ -116,7 +121,7 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--color-primary);
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: var(--radius-sm);
   background: var(--color-primary-subtle);
   transition: all var(--transition);
@@ -131,7 +136,7 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--color-accent);
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: var(--radius-sm);
   background: var(--color-accent-subtle);
   transition: all var(--transition);
@@ -158,80 +163,12 @@
   transition: width 0.2s ease;
 }
 
-/* Preview area */
-.preview {
-  padding: 12px 14px;
-  border-top: 1px solid var(--border);
-  max-height: 400px;
-  overflow: auto;
-}
-
-.previewImage {
-  max-width: 100%;
-  max-height: 360px;
-  border-radius: var(--radius-sm);
-  object-fit: contain;
-}
-
-.previewIframe {
-  width: 100%;
-  height: 360px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: white;
-}
-
-.previewVideo {
-  max-width: 100%;
-  max-height: 360px;
-  border-radius: var(--radius-sm);
-}
-
-.previewAudio {
-  width: 100%;
-  margin: 8px 0;
-}
-
-.previewText {
-  font-size: 12px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  color: var(--text-secondary);
-  background: var(--bg-primary);
-  padding: 12px;
-  border-radius: var(--radius-sm);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 340px;
-  overflow: auto;
-  margin: 0;
-}
-
-.previewFallback {
-  font-size: 13px;
-  color: var(--text-muted);
-  text-align: center;
-  padding: 20px;
-}
-
 @media (max-width: 640px) {
   .panel {
     padding: 12px;
   }
 
   .dropzone {
-    padding: 30px 16px;
-  }
-
-  .preview {
-    max-height: 300px;
-  }
-
-  .previewImage,
-  .previewVideo {
-    max-height: 260px;
-  }
-
-  .previewIframe {
-    height: 260px;
+    padding: 24px 16px;
   }
 }
