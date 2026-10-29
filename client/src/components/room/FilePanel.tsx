@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useState } from "react";
 import { useFileStore } from "../../stores/fileStore";
 import type { FileEntry } from "../../stores/fileStore";
 import styles from "./FilePanel.module.css";
@@ -13,6 +13,7 @@ export function FilePanel({ sendFile }: FilePanelProps) {
   const addFile = useFileStore((s) => s.addFile);
   const updateProgress = useFileStore((s) => s.updateProgress);
   const setStatus = useFileStore((s) => s.setStatus);
+  const [previewFile, setPreviewFile] = useState<FileEntry | null>(null);
 
   const handleFiles = useCallback(
     async (fileList: FileList) => {
@@ -38,7 +39,6 @@ export function FilePanel({ sendFile }: FilePanelProps) {
 
         const transferId = await sendFile(file);
         if (transferId) {
-          // update the temp entry with real transfer ID
           updateProgress(tempId, 1);
           setStatus(tempId, "done");
         } else {
@@ -80,6 +80,30 @@ export function FilePanel({ sendFile }: FilePanelProps) {
     URL.revokeObjectURL(url);
   };
 
+  const isPreviewable = (entry: FileEntry): boolean => {
+    if (!entry.file) return false;
+    const t = entry.type;
+    return (
+      t.startsWith("image/") ||
+      t === "application/pdf" ||
+      t.startsWith("text/") ||
+      t.startsWith("video/") ||
+      t.startsWith("audio/")
+    );
+  };
+
+  const getFileIcon = (type: string): string => {
+    if (type.startsWith("image/")) return "🖼";
+    if (type === "application/pdf") return "📄";
+    if (type.startsWith("video/")) return "🎬";
+    if (type.startsWith("audio/")) return "🎵";
+    if (type.startsWith("text/")) return "📝";
+    if (type.includes("zip") || type.includes("rar") || type.includes("tar")) return "📦";
+    if (type.includes("word") || type.includes("document")) return "📃";
+    if (type.includes("sheet") || type.includes("excel")) return "📊";
+    return "📎";
+  };
+
   return (
     <div className={styles.panel}>
       <div
@@ -110,32 +134,64 @@ export function FilePanel({ sendFile }: FilePanelProps) {
         <div className={styles.fileList}>
           {files.map((entry) => (
             <div key={entry.id} className={styles.fileItem}>
-              <div className={styles.fileInfo}>
-                <span className={styles.fileName}>{entry.name}</span>
-                <span className={styles.fileMeta}>
-                  {formatSize(entry.size)} · {entry.sender}
-                  {entry.status === "done" && " · ✓"}
-                  {entry.status === "sending" && " · Sending..."}
-                  {entry.status === "receiving" && " · Receiving..."}
-                  {entry.status === "error" && " · Failed"}
-                </span>
+              <div
+                className={`${styles.fileRow} ${isPreviewable(entry) && entry.status === "done" ? styles.clickable : ""}`}
+                onClick={() => {
+                  if (isPreviewable(entry) && entry.status === "done") {
+                    setPreviewFile(previewFile?.id === entry.id ? null : entry);
+                  }
+                }}
+              >
+                <span className={styles.fileIcon}>{getFileIcon(entry.type)}</span>
+                <div className={styles.fileInfo}>
+                  <span className={styles.fileName}>{entry.name}</span>
+                  <span className={styles.fileMeta}>
+                    {formatSize(entry.size)} · {entry.sender}
+                    {entry.status === "done" && " · ✓"}
+                    {entry.status === "sending" && " · Sending..."}
+                    {entry.status === "receiving" && " · Receiving..."}
+                    {entry.status === "error" && " · Failed"}
+                  </span>
+                </div>
+
+                <div className={styles.fileActions}>
+                  {entry.status === "done" && isPreviewable(entry) && (
+                    <button
+                      className={styles.previewBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewFile(previewFile?.id === entry.id ? null : entry);
+                      }}
+                    >
+                      {previewFile?.id === entry.id ? "Close" : "Preview"}
+                    </button>
+                  )}
+                  {entry.status === "done" && entry.file && (
+                    <button
+                      className={styles.downloadBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadFile(entry);
+                      }}
+                    >
+                      Save
+                    </button>
+                  )}
+                </div>
+
+                {(entry.status === "sending" || entry.status === "receiving") && (
+                  <div className={styles.progressBar}>
+                    <div
+                      className={styles.progressFill}
+                      style={{ width: `${entry.progress * 100}%` }}
+                    />
+                  </div>
+                )}
               </div>
 
-              {entry.status === "done" && entry.sender !== "You" && entry.file && (
-                <button
-                  className={styles.downloadBtn}
-                  onClick={() => downloadFile(entry)}
-                >
-                  Save
-                </button>
-              )}
-
-              {(entry.status === "sending" || entry.status === "receiving") && (
-                <div className={styles.progressBar}>
-                  <div
-                    className={styles.progressFill}
-                    style={{ width: `${entry.progress * 100}%` }}
-                  />
+              {previewFile?.id === entry.id && entry.file && (
+                <div className={styles.preview}>
+                  <FilePreview file={entry.file} type={entry.type} />
                 </div>
               )}
             </div>
@@ -144,4 +200,46 @@ export function FilePanel({ sendFile }: FilePanelProps) {
       )}
     </div>
   );
+}
+
+function FilePreview({ file, type }: { file: File; type: string }) {
+  const [url] = useState(() => URL.createObjectURL(file));
+  const [textContent, setTextContent] = useState<string | null>(null);
+
+  if (type.startsWith("text/") && textContent === null) {
+    file.text().then((t) => setTextContent(t.slice(0, 5000)));
+  }
+
+  if (type.startsWith("image/")) {
+    return <img src={url} alt={file.name} className={styles.previewImage} />;
+  }
+
+  if (type === "application/pdf") {
+    return (
+      <iframe
+        src={url}
+        title={file.name}
+        className={styles.previewIframe}
+      />
+    );
+  }
+
+  if (type.startsWith("video/")) {
+    return <video src={url} controls className={styles.previewVideo} />;
+  }
+
+  if (type.startsWith("audio/")) {
+    return <audio src={url} controls className={styles.previewAudio} />;
+  }
+
+  if (type.startsWith("text/") && textContent !== null) {
+    return (
+      <pre className={styles.previewText}>
+        {textContent}
+        {textContent.length >= 5000 && "\n\n... (truncated)"}
+      </pre>
+    );
+  }
+
+  return <p className={styles.previewFallback}>Preview not available</p>;
 }
