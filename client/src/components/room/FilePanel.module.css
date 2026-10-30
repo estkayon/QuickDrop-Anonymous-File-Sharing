@@ -172,3 +172,9 @@
     padding: 24px 16px;
   }
 }
+
+.expired {
+  color: var(--text-muted, #666);
+  font-size: 0.75rem;
+  font-style: italic;
+}

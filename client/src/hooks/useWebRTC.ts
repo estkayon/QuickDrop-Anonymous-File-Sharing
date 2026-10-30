@@ -1,6 +1,19 @@
 import { useRef, useCallback, useEffect } from "react";
 import { useRoomStore } from "../stores/roomStore";
 
+function genId(): string {
+  // Generate a 36-char ID to match UUID length (chunks expect 36-byte prefix)
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const parts = [8, 4, 4, 4, 12];
+  return parts
+    .map((len) => {
+      let s = "";
+      for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+      return s;
+    })
+    .join("-");
+}
+
 const CHUNK_SIZE = 16 * 1024;
 
 export function useWebRTC(
@@ -197,7 +210,7 @@ export function useWebRTC(
         return null;
       }
 
-      const transferId = crypto.randomUUID();
+      const transferId = genId();
 
       // send file metadata
       const meta = JSON.stringify({

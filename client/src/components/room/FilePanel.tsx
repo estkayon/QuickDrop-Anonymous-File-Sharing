@@ -183,6 +183,9 @@ export function FilePanel({ sendFile, onPreview, activePreviewId }: FilePanelPro
                     Save
                   </button>
                 )}
+                {entry.status === "done" && !entry.file && (
+                  <span className={styles.expired}>File expired</span>
+                )}
               </div>
 
               {(entry.status === "sending" || entry.status === "receiving") && (
