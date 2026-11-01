@@ -17,6 +17,7 @@ export function Home() {
   return (
     <div className={styles.page}>
       <div className={styles.hero}>
+        <img src="/logo.svg" alt="QuickDrop" className={styles.logo} />
         <h1 className={styles.heading}>
           Drop files. <span className={styles.accent}>Instantly.</span>
         </h1>

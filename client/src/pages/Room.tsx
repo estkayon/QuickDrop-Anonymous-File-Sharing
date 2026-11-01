@@ -34,7 +34,7 @@ export function Room() {
 
   const handleFileReceived = useCallback(
     (file: File, senderId: string) => {
-      const id = crypto.randomUUID();
+      const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
       addFile({
         id,
         name: file.name,

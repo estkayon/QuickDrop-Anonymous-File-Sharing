@@ -1,32 +1,59 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 48px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 16px;
 }
 
+/* Hero */
 .hero {
   text-align: center;
-  padding: 32px 0 8px;
+  padding: 60px 0 0;
+  position: relative;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 360px;
+  height: 360px;
+  background: radial-gradient(circle, var(--color-primary-glow) 0%, transparent 70%);
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+.logo {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 24px;
+  display: block;
 }
 
 .heading {
-  font-size: 42px;
-  font-weight: 800;
-  letter-spacing: -1px;
-  line-height: 1.15;
-  margin-bottom: 14px;
+  font-size: 44px;
+  font-weight: 900;
+  letter-spacing: -1.5px;
+  line-height: 1.1;
+  margin-bottom: 16px;
 }
 
 .accent {
-  color: var(--color-accent);
-  text-shadow: 0 0 40px var(--color-accent-glow);
+  background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .subtitle {
   font-size: 15px;
   color: var(--text-secondary);
   line-height: 1.7;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .features {
@@ -40,41 +67,67 @@
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.8px;
   color: var(--text-muted);
-  padding: 5px 12px;
+  padding: 6px 14px;
   border: 1px solid var(--border);
   border-radius: 20px;
+  transition: all var(--transition);
 }
 
+.tag:hover {
+  border-color: var(--border-hover);
+  color: var(--text-secondary);
+}
+
+/* Action Cards */
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
-  max-width: 520px;
-  margin: 0 auto;
-  width: 100%;
 }
 
 .actionCard {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 28px 20px;
+  gap: 10px;
+  padding: 32px 20px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   cursor: pointer;
   transition: all var(--transition);
   text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.actionCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity var(--transition-slow);
+  pointer-events: none;
+}
+
+.actionCard:first-child::before {
+  background: radial-gradient(ellipse at 50% 80%, var(--color-accent-subtle) 0%, transparent 70%);
+}
+
+.actionCard:last-child::before {
+  background: radial-gradient(ellipse at 50% 80%, var(--color-primary-subtle) 0%, transparent 70%);
 }
 
 .actionCard:hover {
   border-color: var(--border-hover);
-  background: var(--bg-tertiary);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   box-shadow: var(--shadow-md);
+}
+
+.actionCard:hover::before {
+  opacity: 1;
 }
 
 .actionCard:first-child:hover {
@@ -87,16 +140,21 @@
   box-shadow: var(--shadow-glow-primary);
 }
 
+.actionCard:active {
+  transform: translateY(-1px);
+}
+
 .actionIcon {
-  font-size: 24px;
-  width: 48px;
-  height: 48px;
+  font-size: 22px;
+  width: 52px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
+  transition: all var(--transition);
 }
 
 .actionCard:first-child .actionIcon {
@@ -107,10 +165,15 @@
   color: var(--color-primary);
 }
 
+.actionCard:hover .actionIcon {
+  border-color: var(--border-hover);
+  transform: scale(1.05);
+}
+
 .actionLabel {
   font-size: 16px;
   font-weight: 700;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.3px;
 }
 
 .actionHint {
@@ -118,9 +181,30 @@
   color: var(--text-muted);
 }
 
+/* Mobile */
 @media (max-width: 640px) {
+  .page {
+    gap: 36px;
+  }
+
+  .hero {
+    padding: 40px 0 0;
+  }
+
+  .hero::before {
+    width: 280px;
+    height: 280px;
+  }
+
+  .logo {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 20px;
+  }
+
   .heading {
-    font-size: 30px;
+    font-size: 32px;
+    letter-spacing: -1px;
   }
 
   .subtitle {
@@ -128,34 +212,20 @@
   }
 
   .actions {
-    grid-template-columns: 1fr 1fr;
     gap: 12px;
   }
 
   .actionCard {
-    padding: 20px 16px;
-  }
-}
-
-
-@media (max-width: 640px) {
-  .hero {
-    padding: 40px 0 30px;
+    padding: 24px 16px;
   }
 
-  .heading {
-    font-size: 28px;
+  .actionIcon {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
   }
 
-  .subtitle {
-    font-size: 14px;
-  }
-
-  .actions {
-    flex-direction: column;
-  }
-
-  .actionCard {
-    width: 100%;
+  .actionLabel {
+    font-size: 15px;
   }
 }

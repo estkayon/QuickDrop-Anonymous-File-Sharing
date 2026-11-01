@@ -26,7 +26,7 @@ export function FilePanel({ sendFile, onPreview, activePreviewId }: FilePanelPro
           continue;
         }
 
-        const tempId = crypto.randomUUID();
+        const tempId = Math.random().toString(36).slice(2) + Date.now().toString(36);
         addFile({
           id: tempId,
           name: file.name,
