@@ -162,8 +162,8 @@ quickdrop/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/quickdrop.git
-cd quickdrop
+git clone https://github.com/estkayon/QuickDrop-Anonymous-File-Sharing.git
+cd QuickDrop-Anonymous-File-Sharing
 ```
 
 ### 2. Start the signaling server
