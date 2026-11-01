@@ -145,12 +145,7 @@ export function useWebRTC(
   const connectToPeer = useCallback(
     async (peerId: string) => {
       if (connections.current.has(peerId)) return;
-
-      // Only the peer with the lower ID initiates to avoid glare
-      if (!myUserId || myUserId < peerId) {
-          console.log(`[WebRTC] Waiting for ${peerId} to initiate (glare prevention)`);
-          return;
-      }
+      if (!myUserId) return;
 
       console.log(`[WebRTC] Initiating connection to ${peerId}`);
       const pc = createConnection(peerId);
@@ -181,12 +176,15 @@ export function useWebRTC(
           if (msg.type === "offer") {
             console.log(`[WebRTC] Received offer from ${msg.from}`);
 
-            // If we already have a connection and we have lower ID, ignore their offer
-            // (they should accept our offer instead)
             const existing = connections.current.get(msg.from);
-            if (existing && myUserId && myUserId > msg.from) {
-              console.log(`[WebRTC] Ignoring offer from ${msg.from} (we have priority)`);
-              return;
+            if (existing) {
+              if (existing.signalingState === "have-local-offer") {
+                if (myUserId && myUserId > msg.from) {
+                  console.log(`[WebRTC] Ignoring offer from ${msg.from} (we have priority)`);
+                  return;
+                }
+                console.log(`[WebRTC] Accepting offer from ${msg.from} (they have priority)`);
+              }
             }
 
             const pc = createConnection(msg.from);
