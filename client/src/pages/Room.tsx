@@ -75,11 +75,20 @@ export function Room() {
     setPreviewFile(null);
   };
 
+  // Redirect if no room in store
   useEffect(() => {
     if (!storeRoomId) {
       navigate("/");
     }
   }, [storeRoomId, navigate]);
+
+  // Clear chat and files when leaving room via back button
+  useEffect(() => {
+    return () => {
+      useChatStore.getState().clear();
+      useFileStore.getState().clear();
+    };
+  }, []);
 
   if (!storeRoomId) return null;
 

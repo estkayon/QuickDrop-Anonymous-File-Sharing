@@ -2,7 +2,6 @@ import { useRef, useCallback, useEffect } from "react";
 import { useRoomStore } from "../stores/roomStore";
 
 function genId(): string {
-  // Generate a 36-char ID to match UUID length (chunks expect 36-byte prefix)
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   const parts = [8, 4, 4, 4, 12];
   return parts
@@ -143,43 +142,57 @@ export function useWebRTC(
     [createConnection, setupDataChannel, sendSignal]
   );
 
-  // listen for signaling messages
+  // Listen for signaling messages - poll for WebSocket since ref changes don't trigger re-render
   useEffect(() => {
-    const currentWs = ws.current;
-    if (!currentWs) return;
+    let cleanup: (() => void) | null = null;
+    let stopped = false;
 
-    const handler = async (event: MessageEvent) => {
-      const msg = JSON.parse(String(event.data));
+    const interval = setInterval(() => {
+      if (stopped) return;
+      const currentWs = ws.current;
+      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+        clearInterval(interval);
 
-      if (msg.type === "offer") {
-        console.log(`[WebRTC] Received offer from ${msg.from}`);
-        const pc = createConnection(msg.from);
-        await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        sendSignal("answer", msg.from, pc.localDescription?.toJSON());
-      } else if (msg.type === "answer") {
-        const pc = connections.current.get(msg.from);
-        if (pc && pc.signalingState === "have-local-offer") {
-          await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
-        }
-      } else if (msg.type === "ice-candidate") {
-        const pc = connections.current.get(msg.from);
-        if (pc) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(msg.payload));
-          } catch (e) {
-            console.warn("[WebRTC] Failed to add ICE candidate:", e);
+        const handler = async (event: MessageEvent) => {
+          const msg = JSON.parse(String(event.data));
+
+          if (msg.type === "offer") {
+            console.log(`[WebRTC] Received offer from ${msg.from}`);
+            const pc = createConnection(msg.from);
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            sendSignal("answer", msg.from, pc.localDescription?.toJSON());
+          } else if (msg.type === "answer") {
+            const pc = connections.current.get(msg.from);
+            if (pc && pc.signalingState === "have-local-offer") {
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+            }
+          } else if (msg.type === "ice-candidate") {
+            const pc = connections.current.get(msg.from);
+            if (pc) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(msg.payload));
+              } catch (e) {
+                console.warn("[WebRTC] Failed to add ICE candidate:", e);
+              }
+            }
           }
-        }
+        };
+
+        currentWs.addEventListener("message", handler);
+        cleanup = () => currentWs.removeEventListener("message", handler);
       }
+    }, 200);
+
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+      if (cleanup) cleanup();
     };
+  }, [createConnection, sendSignal]);
 
-    currentWs.addEventListener("message", handler);
-    return () => currentWs.removeEventListener("message", handler);
-  }, [ws.current, createConnection, sendSignal]);
-
-  // auto-connect to peers
+  // Auto-connect to peers
   useEffect(() => {
     for (const peerId of peers) {
       if (!connections.current.has(peerId)) {
@@ -188,7 +201,7 @@ export function useWebRTC(
     }
   }, [peers, connectToPeer]);
 
-  // cleanup on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       for (const [, pc] of connections.current) {
@@ -212,7 +225,6 @@ export function useWebRTC(
 
       const transferId = genId();
 
-      // send file metadata
       const meta = JSON.stringify({
         type: "file-start",
         id: transferId,
@@ -224,7 +236,6 @@ export function useWebRTC(
         ch.send(meta);
       }
 
-      // send chunks
       const buffer = await file.arrayBuffer();
       const totalChunks = Math.ceil(buffer.byteLength / CHUNK_SIZE);
       const idBytes = new TextEncoder().encode(transferId);
@@ -248,7 +259,6 @@ export function useWebRTC(
         onProgress(transferId, (i + 1) / totalChunks);
       }
 
-      // send end signal
       for (const ch of openChannels) {
         ch.send(JSON.stringify({ type: "file-end", id: transferId }));
       }
