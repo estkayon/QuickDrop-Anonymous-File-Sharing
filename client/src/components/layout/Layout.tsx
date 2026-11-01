@@ -35,6 +35,9 @@ export function Layout({ children }: LayoutProps) {
         <ThemeToggle />
       </header>
       <main className={styles.main}>{children}</main>
+      <footer className={styles.footer}>
+        <span>&copy; {new Date().getFullYear()} QuickDrop. All rights reserved.</span>
+      </footer>
     </div>
   );
 }

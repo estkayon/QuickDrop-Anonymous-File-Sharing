@@ -82,3 +82,21 @@
     padding: 24px 16px;
   }
 }
+
+
+.footer {
+  text-align: center;
+  padding: 16px 28px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border);
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 640px) {
+  .footer {
+    padding: 14px 16px;
+    font-size: 12px;
+  }
+}
