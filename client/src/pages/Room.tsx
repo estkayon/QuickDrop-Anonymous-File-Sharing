@@ -23,7 +23,6 @@ export function Room() {
   const error = useRoomStore((s) => s.error);
   const addFile = useFileStore((s) => s.addFile);
   const updateProgress = useFileStore((s) => s.updateProgress);
-  const setFileStatus = useFileStore((s) => s.setStatus);
   const fileUnread = useFileStore((s) => s.unread);
   const resetFileUnread = useFileStore((s) => s.resetUnread);
   const incrementFileUnread = useFileStore((s) => s.incrementUnread);
