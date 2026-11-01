@@ -22,6 +22,7 @@ export function useWebRTC(
   onProgress: (transferId: string, progress: number) => void
 ) {
   const peers = useRoomStore((s) => s.peers);
+  const myUserId = useRoomStore((s) => s.userId);
   const connections = useRef<Map<string, RTCPeerConnection>>(new Map());
   const dataChannels = useRef<Map<string, RTCDataChannel>>(new Map());
   const incomingFiles = useRef<Map<string, {
@@ -99,6 +100,21 @@ export function useWebRTC(
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun1.l.google.com:19302" },
+          {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject",
+          },
+          {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject",
+          },
+          {
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject",
+          },
         ],
       });
 
@@ -130,6 +146,12 @@ export function useWebRTC(
     async (peerId: string) => {
       if (connections.current.has(peerId)) return;
 
+      // Only the peer with the lower ID initiates to avoid glare
+      if (!myUserId || myUserId > peerId) {
+        console.log(`[WebRTC] Waiting for ${peerId} to initiate (glare prevention)`);
+        return;
+      }
+
       console.log(`[WebRTC] Initiating connection to ${peerId}`);
       const pc = createConnection(peerId);
       const channel = pc.createDataChannel("files", { ordered: true });
@@ -139,10 +161,10 @@ export function useWebRTC(
       await pc.setLocalDescription(offer);
       sendSignal("offer", peerId, pc.localDescription?.toJSON());
     },
-    [createConnection, setupDataChannel, sendSignal]
+    [createConnection, setupDataChannel, sendSignal, myUserId]
   );
 
-  // Listen for signaling messages - poll for WebSocket since ref changes don't trigger re-render
+  // Listen for signaling messages
   useEffect(() => {
     let cleanup: (() => void) | null = null;
     let stopped = false;
@@ -158,6 +180,15 @@ export function useWebRTC(
 
           if (msg.type === "offer") {
             console.log(`[WebRTC] Received offer from ${msg.from}`);
+
+            // If we already have a connection and we have lower ID, ignore their offer
+            // (they should accept our offer instead)
+            const existing = connections.current.get(msg.from);
+            if (existing && myUserId && myUserId < msg.from) {
+              console.log(`[WebRTC] Ignoring offer from ${msg.from} (we have priority)`);
+              return;
+            }
+
             const pc = createConnection(msg.from);
             await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
             const answer = await pc.createAnswer();
@@ -190,7 +221,7 @@ export function useWebRTC(
       clearInterval(interval);
       if (cleanup) cleanup();
     };
-  }, [createConnection, sendSignal]);
+  }, [createConnection, sendSignal, myUserId]);
 
   // Auto-connect to peers
   useEffect(() => {
