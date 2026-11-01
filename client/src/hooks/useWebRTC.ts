@@ -17,7 +17,7 @@ const CHUNK_SIZE = 16 * 1024;
 
 export function useWebRTC(
   sendSignal: (type: string, to: string, payload: unknown) => void,
-  ws: React.RefObject<WebSocket | null>,
+  _ws: React.RefObject<WebSocket | null>,
   onFileReceived: (file: File, senderId: string) => void,
   onProgress: (transferId: string, progress: number) => void
 ) {
@@ -159,66 +159,49 @@ export function useWebRTC(
     [createConnection, setupDataChannel, sendSignal, myUserId]
   );
 
-  // Listen for signaling messages
+  // Listen for signaling via window custom events (dispatched by useWebSocket)
   useEffect(() => {
-    let cleanup: (() => void) | null = null;
-    let stopped = false;
+    const handler = async (event: Event) => {
+      const msg = (event as CustomEvent).detail;
 
-    const interval = setInterval(() => {
-      if (stopped) return;
-      const currentWs = ws.current;
-      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
-        clearInterval(interval);
+      if (msg.type === "offer") {
+        console.log(`[WebRTC] Received offer from ${msg.from}`);
 
-        const handler = async (event: MessageEvent) => {
-          const msg = JSON.parse(String(event.data));
-
-          if (msg.type === "offer") {
-            console.log(`[WebRTC] Received offer from ${msg.from}`);
-
-            const existing = connections.current.get(msg.from);
-            if (existing) {
-              if (existing.signalingState === "have-local-offer") {
-                if (myUserId && myUserId > msg.from) {
-                  console.log(`[WebRTC] Ignoring offer from ${msg.from} (we have priority)`);
-                  return;
-                }
-                console.log(`[WebRTC] Accepting offer from ${msg.from} (they have priority)`);
-              }
+        const existing = connections.current.get(msg.from);
+        if (existing) {
+          if (existing.signalingState === "have-local-offer") {
+            if (myUserId && myUserId > msg.from) {
+              console.log(`[WebRTC] Ignoring offer from ${msg.from} (we have priority)`);
+              return;
             }
-
-            const pc = createConnection(msg.from);
-            await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            sendSignal("answer", msg.from, pc.localDescription?.toJSON());
-          } else if (msg.type === "answer") {
-            const pc = connections.current.get(msg.from);
-            if (pc && pc.signalingState === "have-local-offer") {
-              await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
-            }
-          } else if (msg.type === "ice-candidate") {
-            const pc = connections.current.get(msg.from);
-            if (pc) {
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(msg.payload));
-              } catch (e) {
-                console.warn("[WebRTC] Failed to add ICE candidate:", e);
-              }
-            }
+            console.log(`[WebRTC] Accepting offer from ${msg.from} (they have priority)`);
           }
-        };
+        }
 
-        currentWs.addEventListener("message", handler);
-        cleanup = () => currentWs.removeEventListener("message", handler);
+        const pc = createConnection(msg.from);
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        sendSignal("answer", msg.from, pc.localDescription?.toJSON());
+      } else if (msg.type === "answer") {
+        const pc = connections.current.get(msg.from);
+        if (pc && pc.signalingState === "have-local-offer") {
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+        }
+      } else if (msg.type === "ice-candidate") {
+        const pc = connections.current.get(msg.from);
+        if (pc) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.payload));
+          } catch (e) {
+            console.warn("[WebRTC] Failed to add ICE candidate:", e);
+          }
+        }
       }
-    }, 200);
-
-    return () => {
-      stopped = true;
-      clearInterval(interval);
-      if (cleanup) cleanup();
     };
+
+    window.addEventListener("webrtc-signal", handler);
+    return () => window.removeEventListener("webrtc-signal", handler);
   }, [createConnection, sendSignal, myUserId]);
 
   // Auto-connect to peers

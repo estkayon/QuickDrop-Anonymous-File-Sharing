@@ -1,284 +1,115 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useEffect, useRef, useCallback } from "react";
+import { getWsUrl } from "../lib/api";
 import { useRoomStore } from "../stores/roomStore";
+import { useChatStore } from "../stores/chatStore";
 
-function genId(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  const parts = [8, 4, 4, 4, 12];
-  return parts
-    .map((len) => {
-      let s = "";
-      for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
-      return s;
-    })
-    .join("-");
-}
+export function useWebSocket() {
+  const wsRef = useRef<WebSocket | null>(null);
+  const intentionalClose = useRef(false);
+  const connectAttempt = useRef(0);
+  const { roomId, userId: savedUserId, password, setUserId, setPeers, addPeer, removePeer, setConnected, setError } =
+    useRoomStore();
+  const addMessage = useChatStore((s) => s.addMessage);
 
-const CHUNK_SIZE = 16 * 1024;
+  useEffect(() => {
+    if (!roomId || !password) return;
 
-export function useWebRTC(
-  sendSignal: (type: string, to: string, payload: unknown) => void,
-  ws: React.RefObject<WebSocket | null>,
-  onFileReceived: (file: File, senderId: string) => void,
-  onProgress: (transferId: string, progress: number) => void
-) {
-  const peers = useRoomStore((s) => s.peers);
-  const myUserId = useRoomStore((s) => s.userId);
-  const connections = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const dataChannels = useRef<Map<string, RTCDataChannel>>(new Map());
-  const incomingFiles = useRef<Map<string, {
-    id: string;
-    name: string;
-    size: number;
-    type: string;
-    chunks: ArrayBuffer[];
-    received: number;
-  }>>(new Map());
+    intentionalClose.current = false;
+    const attempt = ++connectAttempt.current;
 
-  const setupDataChannel = useCallback(
-    (channel: RTCDataChannel, peerId: string) => {
-      channel.binaryType = "arraybuffer";
+    // Small delay to let React Strict Mode finish its unmount/remount cycle
+    const connectTimer = setTimeout(() => {
+      // If a newer attempt started, skip this one
+      if (attempt !== connectAttempt.current) return;
 
-      channel.onopen = () => {
-        console.log(`[WebRTC] Data channel open with ${peerId}`);
-        dataChannels.current.set(peerId, channel);
-      };
-
-      channel.onclose = () => {
-        console.log(`[WebRTC] Data channel closed with ${peerId}`);
-        dataChannels.current.delete(peerId);
-      };
-
-      channel.onmessage = (event) => {
-        if (typeof event.data === "string") {
-          const meta = JSON.parse(event.data);
-
-          if (meta.type === "file-start") {
-            incomingFiles.current.set(meta.id, {
-              id: meta.id,
-              name: meta.name,
-              size: meta.size,
-              type: meta.fileType,
-              chunks: [],
-              received: 0,
-            });
-            onProgress(meta.id, 0);
-          } else if (meta.type === "file-end") {
-            const transfer = incomingFiles.current.get(meta.id);
-            if (transfer) {
-              const blob = new Blob(transfer.chunks, { type: transfer.type });
-              const file = new File([blob], transfer.name, { type: transfer.type });
-              onFileReceived(file, peerId);
-              incomingFiles.current.delete(meta.id);
-            }
-          }
-        } else {
-          const view = new Uint8Array(event.data);
-          const idBytes = view.slice(0, 36);
-          const transferId = new TextDecoder().decode(idBytes);
-          const chunk = view.slice(36).buffer;
-
-          const transfer = incomingFiles.current.get(transferId);
-          if (transfer) {
-            transfer.chunks.push(chunk);
-            transfer.received += chunk.byteLength;
-            onProgress(transferId, Math.min(transfer.received / transfer.size, 1));
-          }
-        }
-      };
-    },
-    [onFileReceived, onProgress]
-  );
-
-  const createConnection = useCallback(
-    (peerId: string): RTCPeerConnection => {
-      const existing = connections.current.get(peerId);
-      if (existing) {
-        existing.close();
+      let wsUrl = getWsUrl(roomId, password);
+      if (savedUserId) {
+        wsUrl += `&userId=${encodeURIComponent(savedUserId)}`;
       }
 
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject",
-          },
-          {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject",
-          },
-          {
-            urls: "turn:openrelay.metered.ca:443?transport=tcp",
-            username: "openrelayproject",
-            credential: "openrelayproject",
-          },
-        ],
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.addEventListener("open", () => {
+        setConnected(true);
+        setError(null);
       });
 
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          sendSignal("ice-candidate", peerId, event.candidate.toJSON());
+      ws.addEventListener("message", (event) => {
+        const msg = JSON.parse(String(event.data));
+
+        switch (msg.type) {
+          case "joined":
+            setUserId(msg.payload.userId);
+            setPeers(msg.payload.peers);
+            break;
+
+          case "peer-joined":
+            addPeer(msg.payload.userId);
+            break;
+
+          case "peer-left":
+            removePeer(msg.payload.userId);
+            break;
+
+          case "chat":
+            addMessage({
+              id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+              sender: msg.from,
+              text: msg.payload.text,
+              time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              isMe: false,
+            });
+            break;
+
+          case "offer":
+          case "answer":
+          case "ice-candidate":
+            // Forward signaling to useWebRTC via window event so it survives WS reconnects
+            window.dispatchEvent(new CustomEvent("webrtc-signal", { detail: msg }));
+            break;
+
+          case "error":
+            setError(msg.payload);
+            ws.close();
+            break;
         }
-      };
+      });
 
-      pc.ondatachannel = (event) => {
-        setupDataChannel(event.channel, peerId);
-      };
-
-      pc.onconnectionstatechange = () => {
-        console.log(`[WebRTC] Connection to ${peerId}: ${pc.connectionState}`);
-        if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-          connections.current.delete(peerId);
-          dataChannels.current.delete(peerId);
+      ws.addEventListener("close", () => {
+        if (!intentionalClose.current) {
+          setConnected(false);
         }
-      };
+      });
 
-      connections.current.set(peerId, pc);
-      return pc;
-    },
-    [sendSignal, setupDataChannel]
-  );
-
-  const connectToPeer = useCallback(
-    async (peerId: string) => {
-      if (connections.current.has(peerId)) return;
-      if (!myUserId) return;
-
-      console.log(`[WebRTC] Initiating connection to ${peerId}`);
-      const pc = createConnection(peerId);
-      const channel = pc.createDataChannel("files", { ordered: true });
-      setupDataChannel(channel, peerId);
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      sendSignal("offer", peerId, pc.localDescription?.toJSON());
-    },
-    [createConnection, setupDataChannel, sendSignal, myUserId]
-  );
-
-  // Listen for signaling via window custom events (dispatched by useWebSocket)
-  useEffect(() => {
-    const handler = async (event: Event) => {
-      const msg = (event as CustomEvent).detail;
-
-      if (msg.type === "offer") {
-        console.log(`[WebRTC] Received offer from ${msg.from}`);
-
-        const existing = connections.current.get(msg.from);
-        if (existing) {
-          if (existing.signalingState === "have-local-offer") {
-            if (myUserId && myUserId > msg.from) {
-              console.log(`[WebRTC] Ignoring offer from ${msg.from} (we have priority)`);
-              return;
-            }
-            console.log(`[WebRTC] Accepting offer from ${msg.from} (they have priority)`);
-          }
+      ws.addEventListener("error", () => {
+        if (!intentionalClose.current) {
+          setConnected(false);
         }
+      });
+    }, 100);
 
-        const pc = createConnection(msg.from);
-        await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        sendSignal("answer", msg.from, pc.localDescription?.toJSON());
-      } else if (msg.type === "answer") {
-        const pc = connections.current.get(msg.from);
-        if (pc && pc.signalingState === "have-local-offer") {
-          await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
-        }
-      } else if (msg.type === "ice-candidate") {
-        const pc = connections.current.get(msg.from);
-        if (pc) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(msg.payload));
-          } catch (e) {
-            console.warn("[WebRTC] Failed to add ICE candidate:", e);
-          }
-        }
-      }
-    };
-
-    window.addEventListener("webrtc-signal", handler);
-    return () => window.removeEventListener("webrtc-signal", handler);
-  }, [createConnection, sendSignal, myUserId]);
-
-  // Auto-connect to peers
-  useEffect(() => {
-    for (const peerId of peers) {
-      if (!connections.current.has(peerId)) {
-        connectToPeer(peerId);
-      }
-    }
-  }, [peers, connectToPeer]);
-
-  // Cleanup on unmount
-  useEffect(() => {
     return () => {
-      for (const [, pc] of connections.current) {
-        pc.close();
+      clearTimeout(connectTimer);
+      intentionalClose.current = true;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
-      connections.current.clear();
-      dataChannels.current.clear();
     };
+  }, [roomId, password]);
+
+  const sendChat = useCallback((text: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "chat", payload: { text } }));
+    }
   }, []);
 
-  const sendFile = useCallback(
-    async (file: File): Promise<string | null> => {
-      const openChannels = Array.from(dataChannels.current.values()).filter(
-        (ch) => ch.readyState === "open"
-      );
+  const sendSignal = useCallback((type: string, to: string, payload: unknown) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type, to, payload }));
+    }
+  }, []);
 
-      if (openChannels.length === 0) {
-        console.warn("[WebRTC] No open data channels. Peers:", peers.length);
-        return null;
-      }
-
-      const transferId = genId();
-
-      const meta = JSON.stringify({
-        type: "file-start",
-        id: transferId,
-        name: file.name,
-        size: file.size,
-        fileType: file.type,
-      });
-      for (const ch of openChannels) {
-        ch.send(meta);
-      }
-
-      const buffer = await file.arrayBuffer();
-      const totalChunks = Math.ceil(buffer.byteLength / CHUNK_SIZE);
-      const idBytes = new TextEncoder().encode(transferId);
-
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, buffer.byteLength);
-        const chunk = buffer.slice(start, end);
-
-        const combined = new Uint8Array(idBytes.byteLength + chunk.byteLength);
-        combined.set(idBytes, 0);
-        combined.set(new Uint8Array(chunk), idBytes.byteLength);
-
-        for (const ch of openChannels) {
-          while (ch.bufferedAmount > 1024 * 1024) {
-            await new Promise((r) => setTimeout(r, 50));
-          }
-          ch.send(combined.buffer);
-        }
-
-        onProgress(transferId, (i + 1) / totalChunks);
-      }
-
-      for (const ch of openChannels) {
-        ch.send(JSON.stringify({ type: "file-end", id: transferId }));
-      }
-
-      return transferId;
-    },
-    [onProgress, peers]
-  );
-
-  return { sendFile };
+  return { sendChat, sendSignal, ws: wsRef };
 }
