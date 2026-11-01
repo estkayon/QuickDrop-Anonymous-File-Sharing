@@ -31,7 +31,7 @@ async function handler(req: Request): Promise<Response> {
   if (path === "/api/rooms" && req.method === "GET") {
     return withCors(handleListRooms());
   }
-  if (path.match(/^\/api\/rooms\/[\w-]+\/join$/) && req.method === "POST") {
+  if (path.match(/^\/api\/rooms\/[^/]+\/join$/) && req.method === "POST") {
     return withCors(await handleJoinRoom(req));
   }
   if (path === "/api/rooms/public" && req.method === "GET") {
