@@ -17,9 +17,7 @@ export function useWebSocket() {
     intentionalClose.current = false;
     const attempt = ++connectAttempt.current;
 
-    // Small delay to let React Strict Mode finish its unmount/remount cycle
     const connectTimer = setTimeout(() => {
-      // If a newer attempt started, skip this one
       if (attempt !== connectAttempt.current) return;
 
       let wsUrl = getWsUrl(roomId, password);
@@ -27,10 +25,13 @@ export function useWebSocket() {
         wsUrl += `&userId=${encodeURIComponent(savedUserId)}`;
       }
 
+      console.log("[WS] Connecting to", wsUrl.replace(/pwd=[^&]+/, "pwd=***"));
+
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.addEventListener("open", () => {
+        console.log("[WS] Connected");
         setConnected(true);
         setError(null);
       });
@@ -40,15 +41,18 @@ export function useWebSocket() {
 
         switch (msg.type) {
           case "joined":
+            console.log("[WS] Joined as", msg.payload.userId, "| Peers:", msg.payload.peers);
             setUserId(msg.payload.userId);
             setPeers(msg.payload.peers);
             break;
 
           case "peer-joined":
+            console.log("[WS] Peer joined:", msg.payload.userId);
             addPeer(msg.payload.userId);
             break;
 
           case "peer-left":
+            console.log("[WS] Peer left:", msg.payload.userId);
             removePeer(msg.payload.userId);
             break;
 
@@ -57,7 +61,7 @@ export function useWebSocket() {
               id: Math.random().toString(36).slice(2) + Date.now().toString(36),
               sender: msg.from,
               text: msg.payload.text,
-              time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true }),
               isMe: false,
             });
             break;
@@ -65,24 +69,27 @@ export function useWebSocket() {
           case "offer":
           case "answer":
           case "ice-candidate":
-            // Forward signaling to useWebRTC via window event so it survives WS reconnects
+            console.log("[WS] Signal:", msg.type, "from", msg.from);
             window.dispatchEvent(new CustomEvent("webrtc-signal", { detail: msg }));
             break;
 
           case "error":
+            console.error("[WS] Server error:", msg.payload);
             setError(msg.payload);
             ws.close();
             break;
         }
       });
 
-      ws.addEventListener("close", () => {
+      ws.addEventListener("close", (event) => {
+        console.log("[WS] Closed. Code:", event.code, "Reason:", event.reason, "Intentional:", intentionalClose.current);
         if (!intentionalClose.current) {
           setConnected(false);
         }
       });
 
-      ws.addEventListener("error", () => {
+      ws.addEventListener("error", (event) => {
+        console.error("[WS] Error:", event);
         if (!intentionalClose.current) {
           setConnected(false);
         }
@@ -108,6 +115,8 @@ export function useWebSocket() {
   const sendSignal = useCallback((type: string, to: string, payload: unknown) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type, to, payload }));
+    } else {
+      console.warn("[WS] Cannot send signal — WebSocket not open. State:", wsRef.current?.readyState);
     }
   }, []);
 

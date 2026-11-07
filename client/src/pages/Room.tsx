@@ -42,6 +42,7 @@ export function Room() {
         progress: 1,
         status: "done",
         sender: senderId,
+        time: "",
         file,
       });
       incrementFileUnread();
@@ -82,11 +83,40 @@ export function Room() {
     }
   }, [storeRoomId, navigate]);
 
-  // Clear chat and files when leaving room via back button
+  // Back button confirmation
   useEffect(() => {
+    const handleBackButton = (e: PopStateEvent) => {
+      e.preventDefault();
+      window.history.pushState(null, "", window.location.href);
+
+      const leave = window.confirm(
+        "Leave this room? File transfers and chat history will be lost."
+      );
+      if (leave) {
+        useChatStore.getState().clear();
+        useFileStore.getState().clear();
+        useRoomStore.getState().reset();
+        navigate("/");
+      }
+    };
+
+    window.history.pushState(null, "", window.location.href);
+    window.addEventListener("popstate", handleBackButton);
+
     return () => {
-      useChatStore.getState().clear();
-      useFileStore.getState().clear();
+      window.removeEventListener("popstate", handleBackButton);
+    };
+  }, [navigate]);
+
+  // Warn on tab/window close
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, []);
 

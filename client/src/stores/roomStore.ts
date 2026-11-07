@@ -30,9 +30,6 @@ function saveSession(roomId: string, password: string, userId?: string) {
   } catch {}
 }
 
-function clearSession() {
-  try { sessionStorage.removeItem("quickdrop_session"); } catch {}
-}
 
 function loadSession(): { roomId: string; password: string; userId?: string } | null {
   try {
@@ -72,8 +69,13 @@ export const useRoomStore = create<RoomState>((set, get) => ({
     })),
   setConnected: (connected) => set({ connected }),
   setError: (error) => set({ error }),
-  reset: () => {
-    clearSession();
-    set({ roomId: null, userId: null, password: null, peers: [], connected: false, error: null });
-  },
+  reset: () =>
+    set({
+      roomId: null,
+      userId: null,
+      password: null,
+      peers: [],
+      connected: false,
+      error: null,
+    }),
 }));

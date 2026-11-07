@@ -35,6 +35,7 @@ export function FilePanel({ sendFile, onPreview, activePreviewId }: FilePanelPro
           progress: 0,
           status: "sending",
           sender: "You",
+          time: "",
           file,
         });
 
@@ -152,7 +153,7 @@ export function FilePanel({ sendFile, onPreview, activePreviewId }: FilePanelPro
               <div className={styles.fileInfo}>
                 <span className={styles.fileName}>{entry.name}</span>
                 <span className={styles.fileMeta}>
-                  {formatSize(entry.size)} · {entry.sender}
+                  {formatSize(entry.size)} · {entry.sender} · {entry.time}
                   {entry.status === "done" && " · ✓"}
                   {entry.status === "sending" && " · Sending..."}
                   {entry.status === "receiving" && " · Receiving..."}

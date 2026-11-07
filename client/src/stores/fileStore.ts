@@ -8,6 +8,7 @@ export interface FileEntry {
   progress: number;
   status: "sending" | "receiving" | "done" | "error";
   sender: string;
+  time: string;
   file?: File;
 }
 
@@ -19,6 +20,7 @@ interface SavedFileEntry {
   progress: number;
   status: "sending" | "receiving" | "done" | "error";
   sender: string;
+  time: string;
 }
 
 interface FileState {
@@ -37,8 +39,6 @@ function loadFiles(): FileEntry[] {
     const raw = sessionStorage.getItem("quickdrop_files");
     if (raw) {
       const files = JSON.parse(raw) as FileEntry[];
-      // File objects can't survive refresh — mark completed files
-      // They keep their metadata but preview/download won't work
       return files.map((f) => ({ ...f, file: undefined }));
     }
   } catch {}
@@ -47,9 +47,8 @@ function loadFiles(): FileEntry[] {
 
 function saveFiles(files: FileEntry[]) {
   try {
-    // Save metadata only (File objects can't be serialized)
-    const toSave: SavedFileEntry[] = files.slice(-100).map(({ id, name, size, type, progress, status, sender }) => ({
-      id, name, size, type, progress, status, sender,
+    const toSave: SavedFileEntry[] = files.slice(-100).map(({ id, name, size, type, progress, status, sender, time }) => ({
+      id, name, size, type, progress, status, sender, time,
     }));
     sessionStorage.setItem("quickdrop_files", JSON.stringify(toSave));
   } catch {}
@@ -61,7 +60,11 @@ export const useFileStore = create<FileState>((set) => ({
 
   addFile: (entry) =>
     set((state) => {
-      const files = [entry, ...state.files];
+      const withTime = {
+        ...entry,
+        time: entry.time || new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true }),
+      };
+      const files = [withTime, ...state.files];
       saveFiles(files);
       return { files };
     }),
